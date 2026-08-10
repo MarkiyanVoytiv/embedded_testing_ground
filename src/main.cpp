@@ -6,17 +6,8 @@
 #define SPEED_BUTTON_PIN 10
 #define MODE_BUTTON_PIN 12
 
-bool ledState = false;
-
-bool fastMode = false;
-bool prevSpeedButtonState = HIGH;
-
-bool patrolMode = false;
-bool prevModeButtonState = HIGH;
-
-unsigned long blinkDelay = 1000;
-
-void setup() {
+void setup()
+{
     Serial.begin(115200);
 
     pinMode(LED_BLUE_PIN, OUTPUT);
@@ -30,40 +21,48 @@ void setup() {
 
     pinMode(SPEED_BUTTON_PIN, INPUT_PULLUP);
     pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
-
 }
 
-void loop() {
-  bool speedButtonState = digitalRead(SPEED_BUTTON_PIN);
-  if (prevSpeedButtonState == HIGH && speedButtonState == LOW) {
-    delay(30);
+void loop()
+{
+    static bool fastMode = false;
+    static bool patrolMode = false;
+    static bool ledState = false;
+    static bool prevSpeedButtonState = HIGH;
+    static bool prevModeButtonState = HIGH;
+    static unsigned long blinkDelay = 1000;
+    bool speedButtonState = digitalRead(SPEED_BUTTON_PIN);
+    if (prevSpeedButtonState == HIGH && speedButtonState == LOW)
+    {
+        delay(30);
         fastMode = !fastMode;
         if (fastMode)
         {
-          blinkDelay = 200;
-          Serial.println("Speed Mode: FAST");
+            blinkDelay = 200;
+            Serial.println("Speed Mode: FAST");
         }
         else
         {
-          blinkDelay = 1000;
-          Serial.println("Speed Mode: SLOW");
+            blinkDelay = 1000;
+            Serial.println("Speed Mode: SLOW");
         }
-
-
     }
     prevSpeedButtonState = speedButtonState;
 
-  bool modeButtonState = digitalRead(MODE_BUTTON_PIN);
-    if (prevModeButtonState == HIGH && modeButtonState == LOW){
-      delay(30);
+    bool modeButtonState = digitalRead(MODE_BUTTON_PIN);
+    if (prevModeButtonState == HIGH && modeButtonState == LOW)
+    {
+        delay(30);
         patrolMode = !patrolMode;
 
-        if (patrolMode){
-          Serial.println("Mode: PATROL");
-        }else{
-          Serial.println("Mode: NORMAL");
+        if (patrolMode)
+        {
+            Serial.println("Mode: PATROL");
         }
-
+        else
+        {
+            Serial.println("Mode: NORMAL");
+        }
     }
     prevModeButtonState = modeButtonState;
 
@@ -71,28 +70,33 @@ void loop() {
     if (millis() - previousTime >= blinkDelay)
     {
         previousTime = millis();
-        if (ledState) {
-          digitalWrite(LED_BLUE_PIN, LOW);
-          if (patrolMode) {
-            pinMode(LED_UNI_PIN, INPUT);
-          } else {
+        if (ledState)
+        {
+            digitalWrite(LED_BLUE_PIN, LOW);
+            if (patrolMode)
+            {
+                pinMode(LED_UNI_PIN, INPUT);
+            }
+            else
+            {
+                pinMode(LED_UNI_PIN, OUTPUT);
+                digitalWrite(LED_UNI_PIN, LOW);
+                digitalWrite(LED_RED_PIN, HIGH);
+            }
+
+            ledState = false;
+            Serial.println("LED_BLUE OFF");
+        }
+        else
+        {
+            digitalWrite(LED_BLUE_PIN, HIGH);
+            digitalWrite(LED_RED_PIN, LOW);
+
             pinMode(LED_UNI_PIN, OUTPUT);
-            digitalWrite(LED_UNI_PIN, LOW);
-            digitalWrite(LED_RED_PIN, HIGH);
-          }
-        
-          ledState = false;
-          Serial.println("LED_BLUE OFF");
-    } else {
-          digitalWrite(LED_BLUE_PIN, HIGH);
-          digitalWrite(LED_RED_PIN, LOW);
+            digitalWrite(LED_UNI_PIN, HIGH);
 
-          pinMode(LED_UNI_PIN, OUTPUT);
-          digitalWrite(LED_UNI_PIN, HIGH);
-
-          ledState = true;
-          Serial.println("LED_BLUE ON");
+            ledState = true;
+            Serial.println("LED_BLUE ON");
+        }
     }
-    }
-    
 }
