@@ -1,102 +1,42 @@
 #include <Arduino.h>
 
-#define LED_RED_PIN 15
-#define LED_BLUE_PIN 18
-#define LED_UNI_PIN 5
-#define SPEED_BUTTON_PIN 10
-#define MODE_BUTTON_PIN 12
+#define LDR_PIN 4
 
 void setup()
 {
     Serial.begin(115200);
-
-    pinMode(LED_BLUE_PIN, OUTPUT);
-    digitalWrite(LED_BLUE_PIN, LOW);
-
-    pinMode(LED_RED_PIN, OUTPUT);
-    digitalWrite(LED_RED_PIN, LOW);
-
-    pinMode(LED_UNI_PIN, OUTPUT);
-    digitalWrite(LED_UNI_PIN, LOW);
-
-    pinMode(SPEED_BUTTON_PIN, INPUT_PULLUP);
-    pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
+    analogReadResolution(12);
 }
 
 void loop()
 {
-    static bool fastMode = false;
-    static bool patrolMode = false;
-    static bool ledState = false;
-    static bool prevSpeedButtonState = HIGH;
-    static bool prevModeButtonState = HIGH;
-    static unsigned long blinkDelay = 1000;
-    bool speedButtonState = digitalRead(SPEED_BUTTON_PIN);
-    if (prevSpeedButtonState == HIGH && speedButtonState == LOW)
-    {
-        delay(30);
-        fastMode = !fastMode;
-        if (fastMode)
-        {
-            blinkDelay = 200;
-            Serial.println("Speed Mode: FAST");
-        }
-        else
-        {
-            blinkDelay = 1000;
-            Serial.println("Speed Mode: SLOW");
-        }
-    }
-    prevSpeedButtonState = speedButtonState;
+    int raw = analogRead(LDR_PIN);
 
-    bool modeButtonState = digitalRead(MODE_BUTTON_PIN);
-    if (prevModeButtonState == HIGH && modeButtonState == LOW)
-    {
-        delay(30);
-        patrolMode = !patrolMode;
+    float calculatedVoltage =
+        (raw / 4095.0) * 3100.0;
 
-        if (patrolMode)
-        {
-            Serial.println("Mode: PATROL");
-        }
-        else
-        {
-            Serial.println("Mode: NORMAL");
-        }
-    }
-    prevModeButtonState = modeButtonState;
+    uint32_t measuredVoltage =
+        analogReadMilliVolts(LDR_PIN);
 
-    static unsigned long previousTime = 0;
-    if (millis() - previousTime >= blinkDelay)
-    {
-        previousTime = millis();
-        if (ledState)
-        {
-            digitalWrite(LED_BLUE_PIN, LOW);
-            if (patrolMode)
-            {
-                pinMode(LED_UNI_PIN, INPUT);
-            }
-            else
-            {
-                pinMode(LED_UNI_PIN, OUTPUT);
-                digitalWrite(LED_UNI_PIN, LOW);
-                digitalWrite(LED_RED_PIN, HIGH);
-            }
+    float error =
+        abs(calculatedVoltage - measuredVoltage)
+        / measuredVoltage
+        * 100.0;
 
-            ledState = false;
-            Serial.println("LED_BLUE OFF");
-        }
-        else
-        {
-            digitalWrite(LED_BLUE_PIN, HIGH);
-            digitalWrite(LED_RED_PIN, LOW);
+    Serial.print("RAW: ");
+    Serial.print(raw);
 
-            pinMode(LED_UNI_PIN, OUTPUT);
-            digitalWrite(LED_UNI_PIN, HIGH);
+    Serial.print(" | Calculated: ");
+    Serial.print(calculatedVoltage);
+    Serial.print(" mV");
 
-            ledState = true;
-            Serial.println("LED_BLUE ON");
-        }
-    }
+    Serial.print(" | Measured: ");
+    Serial.print(measuredVoltage);
+    Serial.print(" mV");
+
+    Serial.print(" | Error: ");
+    Serial.print(error, 2);
+    Serial.println(" %");
+
+    delay(100);
 }
