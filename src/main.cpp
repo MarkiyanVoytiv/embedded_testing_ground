@@ -2,9 +2,9 @@
 
 #define LED_RED_PIN 15
 #define LED_BLUE_PIN 18
-#define LED_UNI_PIN 5
-#define SPEED_BUTTON_PIN 10
-#define MODE_BUTTON_PIN 12
+
+#define SYNC_BUTTON_PIN 10
+#define ASYNC_BUTTON_PIN 0
 
 void setup()
 {
@@ -16,87 +16,59 @@ void setup()
     pinMode(LED_RED_PIN, OUTPUT);
     digitalWrite(LED_RED_PIN, LOW);
 
-    pinMode(LED_UNI_PIN, OUTPUT);
-    digitalWrite(LED_UNI_PIN, LOW);
-
-    pinMode(SPEED_BUTTON_PIN, INPUT_PULLUP);
-    pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(SYNC_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(ASYNC_BUTTON_PIN, INPUT);
 }
 
 void loop()
 {
-    static bool fastMode = false;
-    static bool patrolMode = false;
+    static bool syncMode = true;   // режим №1 за замовчуванням
     static bool ledState = false;
-    static bool prevSpeedButtonState = HIGH;
-    static bool prevModeButtonState = HIGH;
-    static unsigned long blinkDelay = 1000;
-    bool speedButtonState = digitalRead(SPEED_BUTTON_PIN);
-    if (prevSpeedButtonState == HIGH && speedButtonState == LOW)
-    {
-        delay(30);
-        fastMode = !fastMode;
-        if (fastMode)
-        {
-            blinkDelay = 200;
-            Serial.println("Speed Mode: FAST");
-        }
-        else
-        {
-            blinkDelay = 1000;
-            Serial.println("Speed Mode: SLOW");
-        }
-    }
-    prevSpeedButtonState = speedButtonState;
-
-    bool modeButtonState = digitalRead(MODE_BUTTON_PIN);
-    if (prevModeButtonState == HIGH && modeButtonState == LOW)
-    {
-        delay(30);
-        patrolMode = !patrolMode;
-
-        if (patrolMode)
-        {
-            Serial.println("Mode: PATROL");
-        }
-        else
-        {
-            Serial.println("Mode: NORMAL");
-        }
-    }
-    prevModeButtonState = modeButtonState;
 
     static unsigned long previousTime = 0;
+
+    unsigned long blinkDelay;
+
+    bool syncButtonState = digitalRead(SYNC_BUTTON_PIN);
+    bool asyncButtonState = digitalRead(ASYNC_BUTTON_PIN);
+
+    if (syncButtonState == LOW && !syncMode)
+    {
+        delay(30);
+        syncMode = true;
+        Serial.println("Sync Mode Activated");
+    }
+
+    if (asyncButtonState == LOW && syncMode)
+    {
+        delay(30);
+        syncMode = false;
+        Serial.println("Async Mode Activated");
+    }
+
+    if (syncMode)
+    {
+        blinkDelay = 200;
+    }
+    else
+    {
+        blinkDelay = 1000;
+    }
+
     if (millis() - previousTime >= blinkDelay)
     {
         previousTime = millis();
-        if (ledState)
-        {
-            digitalWrite(LED_BLUE_PIN, LOW);
-            if (patrolMode)
-            {
-                pinMode(LED_UNI_PIN, INPUT);
-            }
-            else
-            {
-                pinMode(LED_UNI_PIN, OUTPUT);
-                digitalWrite(LED_UNI_PIN, LOW);
-                digitalWrite(LED_RED_PIN, HIGH);
-            }
+        ledState = !ledState;
 
-            ledState = false;
-            Serial.println("LED_BLUE OFF");
+        if (syncMode)
+        {
+            digitalWrite(LED_RED_PIN, ledState);
+            digitalWrite(LED_BLUE_PIN, ledState);
         }
         else
         {
-            digitalWrite(LED_BLUE_PIN, HIGH);
-            digitalWrite(LED_RED_PIN, LOW);
-
-            pinMode(LED_UNI_PIN, OUTPUT);
-            digitalWrite(LED_UNI_PIN, HIGH);
-
-            ledState = true;
-            Serial.println("LED_BLUE ON");
+            digitalWrite(LED_RED_PIN, ledState);
+            digitalWrite(LED_BLUE_PIN, !ledState);
         }
     }
 }
