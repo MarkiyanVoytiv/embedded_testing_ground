@@ -1,74 +1,133 @@
 #include <Arduino.h>
 
-#define LED_RED_PIN 15
-#define LED_BLUE_PIN 18
+volatile bool buttonPressed = false;
 
-#define SYNC_BUTTON_PIN 10
-#define ASYNC_BUTTON_PIN 0
+struct Config
+{
+    static constexpr uint8_t LED_PIN = 4;
+    static constexpr uint8_t BUTTON_PIN = 10;
+    static constexpr unsigned long BLINK_DELAY_MS = 1000;
+    static constexpr unsigned long DEBOUNCE_DELAY_MS = 200;
+};
+
+enum class LedState
+{
+    Off,
+    On
+};
+
+enum class LedMode
+{
+    Blinking,
+    On,
+    Off
+};
+
+class Led
+{
+public:
+    static void init()
+    {
+        pinMode(Config::LED_PIN, OUTPUT);
+        set(LedState::Off);
+        pinMode(Config::BUTTON_PIN, INPUT_PULLUP);
+        attachInterrupt(
+            digitalPinToInterrupt(Config::BUTTON_PIN),
+            buttonIsr,
+            FALLING);
+    }
+
+    static void buttonIsr()
+    {
+        buttonPressed = true;
+    }
+
+    static void set(LedState state)
+    {
+        if (state == LedState::On)
+        {
+            digitalWrite(Config::LED_PIN, HIGH);
+        }
+        else
+        {
+            digitalWrite(Config::LED_PIN, LOW);
+        }
+    }
+};
 
 void setup()
 {
     Serial.begin(115200);
-
-    pinMode(LED_BLUE_PIN, OUTPUT);
-    digitalWrite(LED_BLUE_PIN, LOW);
-
-    pinMode(LED_RED_PIN, OUTPUT);
-    digitalWrite(LED_RED_PIN, LOW);
-
-    pinMode(SYNC_BUTTON_PIN, INPUT_PULLUP);
-    pinMode(ASYNC_BUTTON_PIN, INPUT);
+    Led::init();
 }
 
 void loop()
 {
-    static bool syncMode = true;   // режим №1 за замовчуванням
-    static bool ledState = false;
-
+    unsigned long startTime = micros();
+    static uint32_t totalLoopTime = 0;
     static unsigned long previousTime = 0;
+    static LedState currentState = LedState::Off;
+    static LedMode currentMode = LedMode::Blinking;
+    static uint16_t loopCounter = 0;
+    static unsigned long lastButtonPressTime = 0;
 
-    unsigned long blinkDelay;
-
-    bool syncButtonState = digitalRead(SYNC_BUTTON_PIN);
-    bool asyncButtonState = digitalRead(ASYNC_BUTTON_PIN);
-
-    if (syncButtonState == LOW && !syncMode)
+    if (buttonPressed)
     {
-        delay(30);
-        syncMode = true;
-        Serial.println("Sync Mode Activated");
-    }
-
-    if (asyncButtonState == LOW && syncMode)
-    {
-        delay(30);
-        syncMode = false;
-        Serial.println("Async Mode Activated");
-    }
-
-    if (syncMode)
-    {
-        blinkDelay = 200;
-    }
-    else
-    {
-        blinkDelay = 1000;
-    }
-
-    if (millis() - previousTime >= blinkDelay)
-    {
-        previousTime = millis();
-        ledState = !ledState;
-
-        if (syncMode)
-        {
-            digitalWrite(LED_RED_PIN, ledState);
-            digitalWrite(LED_BLUE_PIN, ledState);
+        buttonPressed = false;
+        if (millis() - lastButtonPressTime > Config::DEBOUNCE_DELAY_MS)
+        { 
+            switch (currentMode)
+            {
+            case LedMode::Blinking:
+                currentMode = LedMode::On;
+                break;
+            case LedMode::On:
+                currentMode = LedMode::Off;
+                break;
+            case LedMode::Off:
+                currentMode = LedMode::Blinking;
+                break;
+            }
+            lastButtonPressTime = millis();
         }
-        else
+    }
+
+    if (currentMode == LedMode::On)
+    {
+        currentState = LedState::On;
+        Led::set(currentState);
+    }
+    else if (currentMode == LedMode::Blinking)
+    {
+        if (millis() - previousTime >= Config::BLINK_DELAY_MS)
         {
-            digitalWrite(LED_RED_PIN, ledState);
-            digitalWrite(LED_BLUE_PIN, !ledState);
+            previousTime = millis();
+
+            currentState =
+                (currentState == LedState::Off)
+                    ? LedState::On
+                    : LedState::Off;
+
+            Led::set(currentState);
         }
+    }
+    else if (currentMode == LedMode::Off)
+    {
+        currentState = LedState::Off;
+        Led::set(currentState);
+    }
+
+    unsigned long endTime = micros();
+    unsigned long loopDuration = endTime - startTime;
+
+    totalLoopTime += loopDuration;
+    loopCounter++;
+
+    if (loopCounter == 1000)
+    {
+        Serial.println("Average loop time (microseconds):");
+        Serial.println(totalLoopTime / loopCounter);
+        loopCounter = 0;
+        totalLoopTime = 0;
     }
 }
