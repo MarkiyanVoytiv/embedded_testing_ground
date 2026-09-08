@@ -1,133 +1,84 @@
 #include <Arduino.h>
 
-volatile bool buttonPressed = false;
+#define RELAY_IN 4
+#define RELAY_CONTROL_OUT 8
 
-struct Config
-{
-    static constexpr uint8_t LED_PIN = 4;
-    static constexpr uint8_t BUTTON_PIN = 10;
-    static constexpr unsigned long BLINK_DELAY_MS = 1000;
-    static constexpr unsigned long DEBOUNCE_DELAY_MS = 200;
-};
+#define LOOP_DELAY_MS 1000
+#define NUMBER_OF_TESTS 20
 
-enum class LedState
-{
-    Off,
-    On
-};
+volatile bool onTest = false;
+volatile unsigned long testFinishedTime = 0;
 
-enum class LedMode
+static void relayIsr()
 {
-    Blinking,
-    On,
-    Off
-};
-
-class Led
-{
-public:
-    static void init()
+    if (onTest && !testFinishedTime)
     {
-        pinMode(Config::LED_PIN, OUTPUT);
-        set(LedState::Off);
-        pinMode(Config::BUTTON_PIN, INPUT_PULLUP);
-        attachInterrupt(
-            digitalPinToInterrupt(Config::BUTTON_PIN),
-            buttonIsr,
-            FALLING);
+        testFinishedTime = micros();
     }
-
-    static void buttonIsr()
-    {
-        buttonPressed = true;
-    }
-
-    static void set(LedState state)
-    {
-        if (state == LedState::On)
-        {
-            digitalWrite(Config::LED_PIN, HIGH);
-        }
-        else
-        {
-            digitalWrite(Config::LED_PIN, LOW);
-        }
-    }
-};
+}
 
 void setup()
 {
     Serial.begin(115200);
-    Led::init();
+    pinMode(RELAY_IN, INPUT_PULLUP);
+    pinMode(RELAY_CONTROL_OUT, OUTPUT);
+    digitalWrite(RELAY_CONTROL_OUT, LOW);
+    attachInterrupt(
+        digitalPinToInterrupt(RELAY_IN),
+        relayIsr,
+        CHANGE);
+    delay(5000);
 }
 
 void loop()
 {
-    unsigned long startTime = micros();
-    static uint32_t totalLoopTime = 0;
-    static unsigned long previousTime = 0;
-    static LedState currentState = LedState::Off;
-    static LedMode currentMode = LedMode::Blinking;
-    static uint16_t loopCounter = 0;
-    static unsigned long lastButtonPressTime = 0;
+    static unsigned long testStartedTime = 0;
+    static unsigned long testCount = 0;
+    static unsigned long onSum = 0;
+    static unsigned long offSum = 0;
+    static unsigned long onCount = 0;
+    static unsigned long offCount = 0;
+    static bool relayOn = false;
 
-    if (buttonPressed)
+    if (onTest && testFinishedTime > 0)
     {
-        buttonPressed = false;
-        if (millis() - lastButtonPressTime > Config::DEBOUNCE_DELAY_MS)
-        { 
-            switch (currentMode)
-            {
-            case LedMode::Blinking:
-                currentMode = LedMode::On;
-                break;
-            case LedMode::On:
-                currentMode = LedMode::Off;
-                break;
-            case LedMode::Off:
-                currentMode = LedMode::Blinking;
-                break;
-            }
-            lastButtonPressTime = millis();
-        }
-    }
-
-    if (currentMode == LedMode::On)
-    {
-        currentState = LedState::On;
-        Led::set(currentState);
-    }
-    else if (currentMode == LedMode::Blinking)
-    {
-        if (millis() - previousTime >= Config::BLINK_DELAY_MS)
+        onTest = false;
+        Serial.print("Test #");
+        Serial.print(testCount + 1);
+        Serial.println(relayOn ? " ON:" : " OFF:");
+        Serial.print("Relay reaction time: ");
+        unsigned long reactionTime = testFinishedTime - testStartedTime;
+        Serial.println(reactionTime);
+        if (relayOn)
         {
-            previousTime = millis();
-
-            currentState =
-                (currentState == LedState::Off)
-                    ? LedState::On
-                    : LedState::Off;
-
-            Led::set(currentState);
+            onSum += reactionTime;
+            onCount++;
         }
+        else
+        {
+            offSum += reactionTime;
+            offCount++;
+        }
+        testFinishedTime = 0;
+        testCount++;
+        delay(LOOP_DELAY_MS);
     }
-    else if (currentMode == LedMode::Off)
+
+    if (!onTest && testCount < NUMBER_OF_TESTS)
     {
-        currentState = LedState::Off;
-        Led::set(currentState);
+        testStartedTime = micros();
+        relayOn = !relayOn;
+        onTest = true;
+        relayOn ? digitalWrite(RELAY_CONTROL_OUT, HIGH) : digitalWrite(RELAY_CONTROL_OUT, LOW);
     }
 
-    unsigned long endTime = micros();
-    unsigned long loopDuration = endTime - startTime;
-
-    totalLoopTime += loopDuration;
-    loopCounter++;
-
-    if (loopCounter == 1000)
+    if (testCount == NUMBER_OF_TESTS)
     {
-        Serial.println("Average loop time (microseconds):");
-        Serial.println(totalLoopTime / loopCounter);
-        loopCounter = 0;
-        totalLoopTime = 0;
+        Serial.println("Test finished.");
+        Serial.print("Average ON reaction time: ");
+        Serial.println(onCount ? onSum / onCount : 0);
+        Serial.print("Average OFF reaction time: ");
+        Serial.println(offCount ? offSum / offCount : 0);
+        testCount++;
     }
 }
