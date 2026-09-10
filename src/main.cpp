@@ -1,12 +1,10 @@
 #include <Arduino.h>
 
-volatile uint32_t interruptCount = 0;
 volatile bool interruptFlag = false;
 
 struct Config
 {
     static constexpr uint8_t BUTTON_PIN = 16;
-    static constexpr uint32_t DEBOUNCE_DELAY_MS = 50;
 };
 
 void IRAM_ATTR handleButtonPress()
@@ -28,17 +26,25 @@ void setup()
 
 void loop()
 {
-    static uint32_t lastAcceptedTime = 0;
-    uint32_t currentTime = 0;
+    static uint32_t buttonPressCount = 0;
+    static bool buttonPressed = false;
+
+    bool buttonState = digitalRead(Config::BUTTON_PIN);
+
     if (interruptFlag)
     {
         interruptFlag = false;
-        currentTime = millis();
-        if (currentTime - lastAcceptedTime >= Config::DEBOUNCE_DELAY_MS)
+
+        if (buttonState == LOW && !buttonPressed)
         {
-            interruptCount++;
-            lastAcceptedTime = currentTime;
-            Serial.println(interruptCount);
+            buttonPressCount++;
+            buttonPressed = true;
+            Serial.println(buttonPressCount);
         }
+    }
+
+    if (buttonState == HIGH && buttonPressed)
+    {
+        buttonPressed = false;
     }
 }
