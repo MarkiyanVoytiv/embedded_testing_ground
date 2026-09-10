@@ -1,50 +1,90 @@
 #include <Arduino.h>
 
-volatile bool interruptFlag = false;
-
 struct Config
 {
     static constexpr uint8_t BUTTON_PIN = 16;
+    static constexpr uint32_t POLL_INTERVAL_MS = 10;
+    static constexpr uint8_t STABLE_READS_REQUIRED = 3;
 };
 
-void IRAM_ATTR handleButtonPress()
+enum class ButtonState
 {
-    interruptFlag = true;
-}
+    Released,
+    DebouncingPress,
+    Pressed,
+    DebouncingRelease
+};
 
 void setup()
 {
     Serial.begin(115200);
 
     pinMode(Config::BUTTON_PIN, INPUT_PULLUP);
-
-    attachInterrupt(
-        digitalPinToInterrupt(Config::BUTTON_PIN),
-        handleButtonPress,
-        FALLING);
 }
 
 void loop()
 {
+    static ButtonState buttonState = ButtonState::Released;
     static uint32_t buttonPressCount = 0;
-    static bool buttonPressed = false;
+    static uint32_t lastPollTime = 0;
+    static uint8_t stableReadCount = 0;
 
-    bool buttonState = digitalRead(Config::BUTTON_PIN);
+    uint32_t currentTime = millis();
 
-    if (interruptFlag)
+    if (currentTime - lastPollTime < Config::POLL_INTERVAL_MS)
     {
-        interruptFlag = false;
-
-        if (buttonState == LOW && !buttonPressed)
-        {
-            buttonPressCount++;
-            buttonPressed = true;
-            Serial.println(buttonPressCount);
-        }
+        return;
     }
 
-    if (buttonState == HIGH && buttonPressed)
+    lastPollTime = currentTime;
+
+    bool buttonPressed = digitalRead(Config::BUTTON_PIN) == LOW;
+
+    switch (buttonState)
     {
-        buttonPressed = false;
+        case ButtonState::Released:
+            if (buttonPressed)
+            {
+                stableReadCount = 1;
+                buttonState = ButtonState::DebouncingPress;
+            }
+            break;
+
+        case ButtonState::DebouncingPress:
+            if (!buttonPressed)
+            {
+                stableReadCount = 0;
+                buttonState = ButtonState::Released;
+            }
+            else if (++stableReadCount >= Config::STABLE_READS_REQUIRED)
+            {
+                stableReadCount = 0;
+                buttonState = ButtonState::Pressed;
+
+                buttonPressCount++;
+                Serial.println(buttonPressCount);
+            }
+            break;
+
+        case ButtonState::Pressed:
+            if (!buttonPressed)
+            {
+                stableReadCount = 1;
+                buttonState = ButtonState::DebouncingRelease;
+            }
+            break;
+
+        case ButtonState::DebouncingRelease:
+            if (buttonPressed)
+            {
+                stableReadCount = 0;
+                buttonState = ButtonState::Pressed;
+            }
+            else if (++stableReadCount >= Config::STABLE_READS_REQUIRED)
+            {
+                stableReadCount = 0;
+                buttonState = ButtonState::Released;
+            }
+            break;
     }
 }
