@@ -1,7 +1,10 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
+
 #define RELAY_CONTROL_OUT 8
 #define ON_TIME_US 2000000
 #define OFF_TIME_US 6000000
+#define WDT_TIMEOUT_S 5
 
 hw_timer_t *timer = NULL;
 
@@ -34,6 +37,9 @@ void setup()
 
     // Enable timer alarm
     timerAlarmEnable(timer);
+
+    esp_task_wdt_init(WDT_TIMEOUT_S, true);
+    esp_task_wdt_add(NULL);
 }
 
 void loop()
@@ -43,4 +49,5 @@ void loop()
         Serial.print("Relay State: ");
         Serial.println(relayState ? "ON" : "OFF");
     }
+    esp_task_wdt_reset();
 }
