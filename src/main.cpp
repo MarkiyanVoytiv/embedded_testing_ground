@@ -1,53 +1,187 @@
 #include <Arduino.h>
-#include <esp_task_wdt.h>
 
-#define RELAY_CONTROL_OUT 8
-#define ON_TIME_US 2000000
-#define OFF_TIME_US 6000000
-#define WDT_TIMEOUT_S 5
-
-hw_timer_t *timer = NULL;
-
-volatile bool stateChanged = false;
-volatile bool relayState = false;
-
-void IRAM_ATTR onTimer()
+enum class TrafficState
 {
-    relayState = !relayState;
-    digitalWrite(RELAY_CONTROL_OUT, relayState);
-    timerAlarmWrite(timer, relayState ? ON_TIME_US : OFF_TIME_US, true);
-    stateChanged = true;
+    MovementAllowed,
+    MovementEnding,
+    ClearIntersection,
+    Stop,
+    PrepareToMove
+};
+
+enum class LedMode
+{
+    Off,
+    On,
+    Blinking
+};
+
+struct Config
+{
+    static constexpr uint8_t GREEN_LED_PIN = 9;
+    static constexpr uint8_t YELLOW_LED_PIN = 8;
+    static constexpr uint8_t RED_LED_PIN = 16;
+
+    static constexpr unsigned long MOVEMENT_ALLOWED_TIME_MS = 5000;
+    static constexpr unsigned long MOVEMENT_ENDING_TIME_MS = 3000;
+    static constexpr unsigned long CLEAR_INTERSECTION_TIME_MS = 2000;
+    static constexpr unsigned long STOP_TIME_MS = 5000;
+    static constexpr unsigned long PREPARE_TO_MOVE_TIME_MS = 2000;
+
+    static constexpr unsigned long BLINK_DELAY_MS = 500;
+};
+
+unsigned long getStateDurationMs(TrafficState state)
+{
+    switch (state)
+    {
+    case TrafficState::MovementAllowed:
+        return Config::MOVEMENT_ALLOWED_TIME_MS;
+
+    case TrafficState::MovementEnding:
+        return Config::MOVEMENT_ENDING_TIME_MS;
+
+    case TrafficState::ClearIntersection:
+        return Config::CLEAR_INTERSECTION_TIME_MS;
+
+    case TrafficState::Stop:
+        return Config::STOP_TIME_MS;
+
+    case TrafficState::PrepareToMove:
+        return Config::PREPARE_TO_MOVE_TIME_MS;
+    }
+
+    return 0;
 }
+
+class Led
+{
+public:
+    Led(uint8_t pin) : pin(pin)
+    {
+    }
+
+    void init()
+    {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, LOW);
+    }
+
+    void set(LedMode newMode)
+    {
+        mode = newMode;
+
+        if (mode == LedMode::On)
+        {
+            digitalWrite(pin, HIGH);
+        }
+        else if (mode == LedMode::Off)
+        {
+            digitalWrite(pin, LOW);
+        }
+        else if (mode == LedMode::Blinking)
+        {
+            lastBlinkTime = millis();
+        }
+    }
+
+    void update()
+    {
+        if (mode != LedMode::Blinking)
+        {
+            return;
+        }
+
+        unsigned long currentTime = millis();
+
+        if (currentTime - lastBlinkTime >= Config::BLINK_DELAY_MS)
+        {
+            lastBlinkTime = currentTime;
+            digitalWrite(pin, !digitalRead(pin));
+        }
+    }
+
+private:
+    uint8_t pin;
+    LedMode mode = LedMode::Off;
+    unsigned long lastBlinkTime = 0;
+};
+
+Led greenLed(Config::GREEN_LED_PIN);
+Led yellowLed(Config::YELLOW_LED_PIN);
+Led redLed(Config::RED_LED_PIN);
+
+TrafficState trafficState = TrafficState::MovementAllowed;
+unsigned long stateStartTime = 0;
 
 void setup()
 {
     Serial.begin(115200);
 
-    pinMode(RELAY_CONTROL_OUT, OUTPUT);
-    digitalWrite(RELAY_CONTROL_OUT, LOW);
+    greenLed.init();
+    yellowLed.init();
+    redLed.init();
 
-    // Initialize timer 0 with prescaler 80, counting up
-    timer = timerBegin(0, 80, true);
+    greenLed.set(LedMode::On);
 
-    // Attach interrupt handler
-    timerAttachInterrupt(timer, &onTimer, true);
-
-    // Set initial alarm interval
-    timerAlarmWrite(timer, OFF_TIME_US, true);
-
-    // Enable timer alarm
-    timerAlarmEnable(timer);
-
-    esp_task_wdt_init(WDT_TIMEOUT_S, true);
-    esp_task_wdt_add(NULL);
+    stateStartTime = millis();
 }
 
 void loop()
 {
-    if (stateChanged) {
-        stateChanged = false;
-        Serial.print("Relay State: ");
-        Serial.println(relayState ? "ON" : "OFF");
+    greenLed.update();
+    yellowLed.update();
+    redLed.update();
+
+    unsigned long currentTime = millis();
+
+    if (currentTime - stateStartTime < getStateDurationMs(trafficState))
+    {
+        return;
     }
-    esp_task_wdt_reset();
+
+    stateStartTime = currentTime;
+
+    switch (trafficState)
+    {
+    case TrafficState::MovementAllowed:
+        trafficState = TrafficState::MovementEnding;
+
+        greenLed.set(LedMode::Blinking);
+        Serial.println("MovementEnding");
+        break;
+
+    case TrafficState::MovementEnding:
+        trafficState = TrafficState::ClearIntersection;
+
+        greenLed.set(LedMode::Off);
+        yellowLed.set(LedMode::On);
+        Serial.println("ClearIntersection");
+        break;
+
+    case TrafficState::ClearIntersection:
+        trafficState = TrafficState::Stop;
+
+        yellowLed.set(LedMode::Off);
+        redLed.set(LedMode::On);
+        Serial.println("Stop");
+        break;
+
+    case TrafficState::Stop:
+        trafficState = TrafficState::PrepareToMove;
+
+        redLed.set(LedMode::On);
+        yellowLed.set(LedMode::On);
+        Serial.println("PrepareToMove");
+        break;
+
+    case TrafficState::PrepareToMove:
+        trafficState = TrafficState::MovementAllowed;
+
+        redLed.set(LedMode::Off);
+        yellowLed.set(LedMode::Off);
+        greenLed.set(LedMode::On);
+        Serial.println("MovementAllowed");
+        break;
+    }
 }
